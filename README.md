@@ -1,229 +1,269 @@
 # FastAPI Contact Manager
 
-REST API for managing contacts built with FastAPI, SQLAlchemy and Alembic.
+Асинхронный REST API для управления контактами, построенный на FastAPI, SQLAlchemy и PostgreSQL.
 
----
+## Стек
 
-**[English](#english)** | **[Русский](#русский)**
+- FastAPI — HTTP API;
+- SQLAlchemy 2 — асинхронная работа с данными;
+- asyncpg — асинхронный драйвер PostgreSQL;
+- Alembic — миграции схемы БД;
+- Pydantic — валидация запросов и ответов;
+- PostgreSQL 17 — база данных;
+- Docker Compose — запуск API и базы данных;
+- Uvicorn — ASGI-сервер.
 
----
+## Архитектура
 
-## English
+Приложение разделено на слои:
 
-### Tech Stack
-
-- **FastAPI** — async web framework
-- **SQLAlchemy** — ORM for database operations
-- **Alembic** — database migrations
-- **Pydantic** — data validation
-- **SQLite** — database
-- **Uvicorn** — ASGI server
-
-### Project Structure
-
+```text
+Controller -> Service -> Repository -> Model -> Database
 ```
-fastapiMyProject/
-├── main.py                 # Root app with demo routes
-├── contact/
-│   ├── __init__.py
-│   ├── main.py             # Contact CRUD endpoints
-│   ├── models.py           # SQLAlchemy models
-│   ├── schemas.py          # Pydantic schemas
-│   └── database.py         # DB engine and session config
+
+- `controllers` отвечают за HTTP-маршруты;
+- `services` содержат бизнес-логику;
+- `repositories` выполняют запросы через SQLAlchemy;
+- `models` содержат ORM-модель и Pydantic-схемы;
+- `database` настраивает async engine и `AsyncSession`;
+- `exceptions` содержит прикладные исключения.
+
+## Структура проекта
+
+```text
+CRUD_FastAPI/
+├── app/
+│   ├── main.py
+│   ├── controllers/
+│   │   └── contact_controller.py
+│   ├── services/
+│   │   └── contact_service.py
+│   ├── repositories/
+│   │   └── contact_repository.py
+│   ├── models/
+│   │   ├── contact_model.py
+│   │   └── contact_schemas.py
+│   ├── database/
+│   │   ├── connection.py
+│   │   ├── dependencies.py
+│   │   └── settings.py
+│   └── exceptions/
+│       └── contact_exceptions.py
 ├── alembic/
-│   └── versions/           # Migration files
+│   └── versions/
+├── .env.example
 ├── alembic.ini
-├── requirements.txt
-└── .gitignore
+├── docker-compose.yml
+├── Dockerfile
+└── requirements.txt
 ```
 
-### Installation
+## Настройка окружения
+
+Скопируйте пример переменных окружения:
 
 ```bash
-git clone <repo-url>
-cd fastapiMyProject
+cp .env.example .env
+```
 
-python -m venv venv
-source venv/bin/activate   # Linux/macOS
-# venv\Scripts\activate    # Windows
+Значения по умолчанию:
 
+```dotenv
+POSTGRES_DB=contacts
+POSTGRES_USER=contacts_user
+POSTGRES_PASSWORD=change_me
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+```
+
+Файл `.env` исключён из Git. Не сохраняйте в репозитории настоящий пароль.
+
+При локальном запуске приложения `POSTGRES_HOST` должен быть равен `localhost`. В Docker Compose это значение автоматически заменяется на имя сервиса `postgres`.
+
+## Запуск в Docker
+
+В текущем окружении используется отдельная команда `docker-compose`:
+
+```bash
+docker-compose up --build -d
+```
+
+При запуске Compose:
+
+1. поднимает PostgreSQL;
+2. ожидает успешный healthcheck базы;
+3. запускает `alembic upgrade head`;
+4. запускает Uvicorn на порту `8000`.
+
+Проверить состояние:
+
+```bash
+docker-compose ps
+```
+
+Посмотреть логи API:
+
+```bash
+docker-compose logs -f api
+```
+
+Посмотреть логи PostgreSQL:
+
+```bash
+docker-compose logs -f postgres
+```
+
+После запуска доступны:
+
+- API: <http://localhost:8000>;
+- Swagger UI: <http://localhost:8000/docs>;
+- OpenAPI JSON: <http://localhost:8000/openapi.json>.
+
+## Остановка и очистка
+
+Остановить контейнеры с сохранением данных PostgreSQL:
+
+```bash
+docker-compose down
+```
+
+Остановить контейнеры и удалить данные PostgreSQL:
+
+```bash
+docker-compose down -v --remove-orphans
+```
+
+Вторая команда удаляет Docker volume проекта. Восстановить его данные после удаления нельзя.
+
+## Локальный запуск API
+
+PostgreSQL можно оставить в Docker, а FastAPI запустить локально:
+
+```bash
+docker-compose up -d postgres
+
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
-```
 
-### Database Setup
-
-```bash
 alembic upgrade head
+uvicorn app.main:app --reload
 ```
 
-### Run
+Для такого запуска в `.env` должно быть:
 
-```bash
-uvicorn contact.main:app --reload
+```dotenv
+POSTGRES_HOST=localhost
 ```
 
-API docs available at: http://127.0.0.1:8000/docs
+## API
 
-### API Endpoints
+| Метод | URL | Назначение |
+|---|---|---|
+| `POST` | `/contacts` | Создать контакт |
+| `GET` | `/contacts` | Получить все контакты |
+| `GET` | `/contacts/{contact_id}` | Получить контакт по ID |
+| `PATCH` | `/contacts/{contact_id}` | Частично обновить контакт |
+| `DELETE` | `/contacts/{contact_id}` | Удалить контакт |
 
-| Method | URL               | Description            |
-|--------|-------------------|------------------------|
-| POST   | `/contact_add`    | Create a new contact   |
-| GET    | `/contact_getAll` | Get all contacts       |
-| POST   | `/contact_get`    | Find contact by name   |
-| POST   | `/contact_update` | Update contact by name |
-| POST   | `/contact_delete` | Delete contact by name |
+### Создание контакта
 
-### Request Examples
+```http
+POST /contacts
+Content-Type: application/json
+```
 
-**Create contact:**
 ```json
-POST /contact_add
 {
-    "nickname": "John",
-    "phone": 79991234567,
-    "isActive": true
+  "nickname": "Ivan",
+  "phone": "+79991234567",
+  "is_active": true
 }
 ```
 
-**Find contact:**
+Успешный ответ имеет статус `201 Created`.
+
+### Частичное обновление
+
+```http
+PATCH /contacts/1
+Content-Type: application/json
+```
+
 ```json
-POST /contact_get
 {
-    "nickname": "John"
+  "phone": "+79997654321",
+  "is_active": false
 }
 ```
 
-**Update contact:**
-```json
-POST /contact_update?nickname=John
-{
-    "nickname": "Johnny",
-    "phone": 79997654321,
-    "isActive": false
-}
+Передавать все поля не требуется: изменяются только присутствующие в запросе значения.
+
+### Удаление
+
+```http
+DELETE /contacts/1
 ```
 
-### Migrations
+Успешный ответ имеет статус `204 No Content`.
+
+## Миграции
+
+Миграции автоматически применяются при запуске API-контейнера.
+
+Создать миграцию после изменения ORM-моделей:
 
 ```bash
-# Create new migration after model changes
-alembic revision --autogenerate -m "description"
-
-# Apply migrations
-alembic upgrade head
-
-# Rollback last migration
-alembic downgrade -1
+docker-compose run --rm api \
+  alembic revision --autogenerate -m "describe change"
 ```
 
----
-
-## Русский
-
-### Стек технологий
-
-- **FastAPI** — асинхронный веб-фреймворк
-- **SQLAlchemy** — ORM для работы с базой данных
-- **Alembic** — миграции базы данных
-- **Pydantic** — валидация данных
-- **SQLite** — база данных
-- **Uvicorn** — ASGI-сервер
-
-### Структура проекта
-
-```
-fastapiMyProject/
-├── main.py                 # Корневое приложение с демо-роутами
-├── contact/
-│   ├── __init__.py
-│   ├── main.py             # CRUD-эндпоинты для контактов
-│   ├── models.py           # SQLAlchemy-модели
-│   ├── schemas.py          # Pydantic-схемы
-│   └── database.py         # Настройка движка БД и сессий
-├── alembic/
-│   └── versions/           # Файлы миграций
-├── alembic.ini
-├── requirements.txt
-└── .gitignore
-```
-
-### Установка
+Применить миграции вручную:
 
 ```bash
-git clone <repo-url>
-cd fastapiMyProject
-
-python -m venv venv
-source venv/bin/activate   # Linux/macOS
-# venv\Scripts\activate    # Windows
-
-pip install -r requirements.txt
+docker-compose run --rm api alembic upgrade head
 ```
 
-### Настройка базы данных
+Показать текущую ревизию:
 
 ```bash
-alembic upgrade head
+docker-compose run --rm api alembic current
 ```
 
-### Запуск
+Откатить последнюю миграцию:
 
 ```bash
-uvicorn contact.main:app --reload
+docker-compose run --rm api alembic downgrade -1
 ```
 
-Документация API доступна по адресу: http://127.0.0.1:8000/docs
+Автоматически созданные миграции необходимо проверять перед применением.
 
-### API-эндпоинты
+## Полезные команды
 
-| Метод  | URL               | Описание                    |
-|--------|-------------------|-----------------------------|
-| POST   | `/contact_add`    | Создать новый контакт       |
-| GET    | `/contact_getAll` | Получить все контакты       |
-| POST   | `/contact_get`    | Найти контакт по имени      |
-| POST   | `/contact_update` | Обновить контакт по имени   |
-| POST   | `/contact_delete` | Удалить контакт по имени    |
-
-### Примеры запросов
-
-**Создание контакта:**
-```json
-POST /contact_add
-{
-    "nickname": "Иван",
-    "phone": 79991234567,
-    "isActive": true
-}
-```
-
-**Поиск контакта:**
-```json
-POST /contact_get
-{
-    "nickname": "Иван"
-}
-```
-
-**Обновление контакта:**
-```json
-POST /contact_update?nickname=Иван
-{
-    "nickname": "Ваня",
-    "phone": 79997654321,
-    "isActive": false
-}
-```
-
-### Миграции
+Пересобрать только API:
 
 ```bash
-# Создать миграцию после изменения моделей
-alembic revision --autogenerate -m "описание"
-
-# Применить миграции
-alembic upgrade head
-
-# Откатить последнюю миграцию
-alembic downgrade -1
+docker-compose build api
 ```
+
+Перезапустить API:
+
+```bash
+docker-compose restart api
+```
+
+Открыть PostgreSQL CLI:
+
+```bash
+docker-compose exec postgres \
+  psql -U contacts_user -d contacts
+```
+
+Проверить таблицы:
+
+```bash
+docker-compose exec postgres \
+  psql -U contacts_user -d contacts -c "\\dt"
+```
+
+Подробный план рефакторинга находится в [REFACTORING_GUIDE.md](REFACTORING_GUIDE.md).
